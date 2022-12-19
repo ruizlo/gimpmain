@@ -75,6 +75,8 @@ load_image (GFile        *file,
   GimpColorProfile  *cmyk_profile = NULL;
   gint               tile_height;
   gint               i;
+  guchar            *photoshop_data = NULL;
+  guint              photoshop_len  = 0;
 
   /* We set up the normal JPEG error routines. */
   cinfo.err = jpeg_std_error (&jerr.pub);
@@ -139,6 +141,9 @@ load_image (GFile        *file,
 
       /* - step 2.3: tell the lib to save APP2 data (ICC profiles) */
       jpeg_save_markers (&cinfo, JPEG_APP0 + 2, 0xffff);
+
+      /* - step 2.4: tell the lib to save APP13 data (clipping path) */
+      jpeg_save_markers (&cinfo, JPEG_APP0 + 13, 0xffff);
     }
 
   /* Step 3: read file parameters with jpeg_read_header() */
@@ -266,6 +271,17 @@ load_image (GFile        *file,
 #ifdef GIMP_UNSTABLE
               g_print ("jpeg-load: found Exif block (%d bytes)\n",
                        (gint) (len - sizeof (JPEG_APP_HEADER_EXIF)));
+#endif
+            }
+          else if ((marker->marker == JPEG_APP0 + 13))
+            {
+              photoshop_data = g_new (guchar, len);
+              photoshop_len  = len;
+              memcpy (photoshop_data, (guchar *) marker->data, len);
+
+#ifdef GIMP_UNSTABLE
+              g_print ("jpeg-load: found Photoshop block (%d bytes) %s\n",
+                       (gint) (len - sizeof (JPEG_APP_HEADER_EXIF)), data);
 #endif
             }
         }
@@ -451,6 +467,47 @@ load_image (GFile        *file,
     }
 
   gimp_image_insert_layer (image, layer, NULL, 0);
+
+  /* Step 9: Load PSD-format metadata if applicable */
+  if (photoshop_len > 0)
+    {
+      FILE           *fp;
+      GFile          *temp_file   = NULL;
+      GimpValueArray *return_vals = NULL;
+
+      temp_file = gimp_temp_file ("tmp");
+      fp = g_fopen (g_file_peek_path (temp_file), "wb");
+
+      if (! fp)
+        {
+          g_message (_("Error trying to open temporary %s file '%s' "
+                     "for jpeg metadata loading: %s"),
+                     "tmp",
+                     gimp_file_get_utf8_name (temp_file),
+                     g_strerror (errno));
+        }
+
+      fwrite (photoshop_data + (sizeof (JPEG_APP_HEADER_EXIF) * 2),
+              sizeof (guchar), photoshop_len - sizeof (JPEG_APP_HEADER_EXIF),
+              fp);
+      fclose (fp);
+
+      g_free (photoshop_data);
+
+      return_vals =
+        gimp_pdb_run_procedure (gimp_get_pdb (),
+                                "file-psd-load-metadata",
+                                GIMP_TYPE_RUN_MODE, GIMP_RUN_NONINTERACTIVE,
+                                G_TYPE_FILE,        temp_file,
+                                G_TYPE_INT,         photoshop_len,
+                                GIMP_TYPE_IMAGE,    image,
+                                G_TYPE_BOOLEAN,     FALSE,
+                                G_TYPE_NONE);
+
+      g_file_delete (temp_file, NULL, NULL);
+      g_object_unref (temp_file);
+      gimp_value_array_unref (return_vals);
+    }
 
   return image;
 }

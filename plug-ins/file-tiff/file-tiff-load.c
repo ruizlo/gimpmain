@@ -47,6 +47,9 @@
 #include <errno.h>
 #include <string.h>
 
+#include <gio/gio.h>
+#include <glib/gstdio.h>
+
 #include <tiffio.h>
 
 #include <libgimp/gimp.h>
@@ -284,6 +287,9 @@ load_image (GFile        *file,
   const gchar       *extra_message      = NULL;
   gint               li;
   gint               selectable_pages;
+  gchar             *photoshop_data;
+  gint32             photoshop_len;
+  gboolean           is_cmyk            = FALSE;
 
   *image = NULL;
   gimp_progress_init_printf (_("Opening '%s'"),
@@ -1032,6 +1038,7 @@ load_image (GFile        *file,
            * attached profile, so we'll check for it and set up
            * space accordingly
            */
+          is_cmyk = TRUE;
           if (profile && gimp_color_profile_is_cmyk (profile))
             {
               space = gimp_color_profile_get_space (profile,
@@ -1785,6 +1792,83 @@ load_image (GFile        *file,
                          -min_col, -min_row);
 
       gimp_image_undo_enable (*image);
+    }
+
+  /* Load Photoshop layer metadata */
+  if (TIFFGetField (tif, TIFFTAG_PHOTOSHOP, &photoshop_len, &photoshop_data))
+    {
+      FILE           *fp;
+      GFile          *temp_file   = NULL;
+      GimpValueArray *return_vals = NULL;
+
+      temp_file = gimp_temp_file ("tmp");
+      fp = g_fopen (g_file_peek_path (temp_file), "wb");
+
+      if (! fp)
+        {
+          g_message (_("Error trying to open temporary %s file '%s' "
+                       "for tiff metadata loading: %s"),
+                     "tmp", gimp_file_get_utf8_name (temp_file),
+                     g_strerror (errno));
+        }
+
+      fwrite (photoshop_data, sizeof (guchar), photoshop_len, fp);
+      fclose (fp);
+
+      return_vals =
+        gimp_pdb_run_procedure (gimp_get_pdb (),
+                                "file-psd-load-metadata",
+                                GIMP_TYPE_RUN_MODE, GIMP_RUN_NONINTERACTIVE,
+                                G_TYPE_FILE,        temp_file,
+                                G_TYPE_INT,         photoshop_len,
+                                GIMP_TYPE_IMAGE,   *image,
+                                G_TYPE_BOOLEAN,     FALSE,
+                                G_TYPE_NONE);
+
+      g_file_delete (temp_file, NULL, NULL);
+      g_object_unref (temp_file);
+      gimp_value_array_unref (return_vals);
+    }
+
+  if (TIFFGetField (tif, TIFFTAG_IMAGESOURCEDATA, &photoshop_len, &photoshop_data))
+    {
+      FILE           *fp;
+      GFile          *temp_file   = NULL;
+      GimpValueArray *return_vals = NULL;
+
+      /* Photoshop metadata starts with 'Adobe Photoshop Document Data Block'
+       * so we need to skip past that for the data. */
+      photoshop_data += 36;
+      photoshop_len  -= 36;
+
+      temp_file = gimp_temp_file ("tmp");
+      fp = g_fopen (g_file_peek_path (temp_file), "wb");
+
+      if (! fp)
+        {
+          g_message (_("Error trying to open temporary %s file '%s' "
+                       "for tiff metadata loading: %s"),
+                     "tmp", gimp_file_get_utf8_name (temp_file),
+                     g_strerror (errno));
+        }
+
+      fwrite (photoshop_data, sizeof (guchar), photoshop_len, fp);
+      fclose (fp);
+
+      return_vals =
+        gimp_pdb_run_procedure (gimp_get_pdb (),
+                                "file-psd-load-metadata",
+                                GIMP_TYPE_RUN_MODE, GIMP_RUN_NONINTERACTIVE,
+                                G_TYPE_FILE,        temp_file,
+                                G_TYPE_INT,         photoshop_len,
+                                GIMP_TYPE_IMAGE,   *image,
+                                G_TYPE_BOOLEAN,     TRUE,
+                                G_TYPE_BOOLEAN,     is_cmyk,
+                                G_TYPE_NONE);
+
+      g_file_delete (temp_file, NULL, NULL);
+      g_object_unref (temp_file);
+      gimp_value_array_unref (return_vals);
     }
 
   g_free (pages.pages);
