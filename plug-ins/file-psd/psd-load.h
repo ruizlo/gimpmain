@@ -28,6 +28,14 @@ GimpImage * load_image  (GFile        *file,
                          gboolean     *profile_loaded,
                          GError      **error);
 
+GimpImage * load_image_metadata
+                        (GFile        *file,
+                         gint          data_length,
+                         GimpImage    *image,
+                         gboolean      for_layers,
+                         gboolean      is_cmyk,
+                         GError      **error);
+
 void        load_dialog (void);
 
 
