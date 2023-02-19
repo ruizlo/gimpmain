@@ -19,20 +19,52 @@
 
 #include <stdlib.h>
 
+#include <archive.h>
+#include <archive_entry.h>
 #include <cairo.h>
-#include <gegl.h>
 #include <gdk-pixbuf/gdk-pixbuf.h>
+#include <gegl.h>
 
 #include "libgimpbase/gimpbase.h"
 #include "libgimpcolor/gimpcolor.h"
 
 #include "core-types.h"
 
+#include "config/gimpxmlparser.h"
+
 #include "gimp-utils.h"
 #include "gimppalette.h"
 #include "gimppalette-load.h"
 
 #include "gimp-intl.h"
+
+typedef struct
+{
+  GimpPalette *palette;
+  gint         position;
+  gchar       *palette_name;
+  gchar       *color_model;
+  gboolean     in_color_tag;
+  gboolean     copy_name;
+  gboolean     copy_values;
+} SwatchBookerData;
+
+/* SwatchBooker XML parser functions */
+static void swatchbooker_load_start_element (GMarkupParseContext *context,
+                                             const gchar         *element_name,
+                                             const gchar        **attribute_names,
+                                             const gchar        **attribute_values,
+                                             gpointer             user_data,
+                                             GError             **error);
+static void swatchbooker_load_end_element   (GMarkupParseContext *context,
+                                             const gchar         *element_name,
+                                             gpointer             user_data,
+                                             GError             **error);
+static void swatchbooker_load_text          (GMarkupParseContext *context,
+                                             const gchar         *text,
+                                             gsize                text_len,
+                                             gpointer             user_data,
+                                             GError             **error);
 
 
 GList *
@@ -634,6 +666,231 @@ gimp_palette_load_css (GimpContext   *context,
   return g_list_prepend (NULL, palette);
 }
 
+GList *
+gimp_palette_load_sbz (GimpContext   *context,
+                       GFile         *file,
+                       GInputStream  *input,
+                       GError       **error)
+{
+  SwatchBookerData      sbz_data;
+  gchar                *palette_name;
+  struct archive       *a;
+  struct archive_entry *entry;
+  int                   r;
+
+  g_return_val_if_fail (G_IS_FILE (file), NULL);
+  g_return_val_if_fail (G_IS_INPUT_STREAM (input), NULL);
+  g_return_val_if_fail (error == NULL || *error == NULL, NULL);
+
+  palette_name     = g_path_get_basename (gimp_file_get_utf8_name (file));
+  sbz_data.palette = GIMP_PALETTE (gimp_palette_new (context, palette_name));
+  g_free (palette_name);
+
+  sbz_data.position     = 0;
+  sbz_data.in_color_tag = FALSE;
+  sbz_data.copy_name    = FALSE;
+  sbz_data.copy_values  = FALSE;
+  sbz_data.palette_name = NULL;
+
+  if ((a = archive_read_new ()))
+    {
+      const gchar *name = gimp_file_get_utf8_name (file);
+
+      archive_read_support_format_zip (a);
+      r = archive_read_open_filename (a, name, 10240);
+      if (r != ARCHIVE_OK)
+        {
+          archive_read_free (a);
+
+          g_set_error (error, GIMP_DATA_ERROR, GIMP_DATA_ERROR_READ,
+                       _("Unable to read SBZ file"));
+          return NULL;
+        }
+
+      while (archive_read_next_header (a, &entry) == ARCHIVE_OK)
+        {
+          const gchar *lower = g_ascii_strdown (archive_entry_pathname (entry), -1);
+
+          if (g_str_has_suffix (lower, ".xml"))
+            {
+              GimpXmlParser *xml_parser;
+              GMarkupParser  markup_parser;
+              size_t         entry_size = archive_entry_size (entry);
+              gchar         *xml_data   = (gchar *) g_malloc (entry_size);
+
+              r = archive_read_data (a, xml_data, entry_size);
+
+              markup_parser.start_element = swatchbooker_load_start_element;
+              markup_parser.end_element   = swatchbooker_load_end_element;
+              markup_parser.text          = swatchbooker_load_text;
+              markup_parser.passthrough   = NULL;
+              markup_parser.error         = NULL;
+
+              xml_parser = gimp_xml_parser_new (&markup_parser, &sbz_data);
+
+              gimp_xml_parser_parse_buffer (xml_parser, xml_data, entry_size, NULL);
+              gimp_xml_parser_free (xml_parser);
+
+              break;
+            }
+        }
+
+      r = archive_read_free (a);
+    }
+  else
+    {
+      g_set_error (error, GIMP_DATA_ERROR, GIMP_DATA_ERROR_READ,
+                   _("Unable to open SBZ file"));
+      return NULL;
+    }
+
+  if (sbz_data.color_model)
+    g_free (sbz_data.color_model);
+  if (sbz_data.palette_name)
+    g_free (sbz_data.palette_name);
+
+  return g_list_prepend (NULL, sbz_data.palette);
+}
+
+static void
+swatchbooker_load_start_element (GMarkupParseContext *context,
+                                 const gchar         *element_name,
+                                 const gchar        **attribute_names,
+                                 const gchar        **attribute_values,
+                                 gpointer             user_data,
+                                 GError             **error)
+{
+  SwatchBookerData *sbz_data = user_data;
+
+  sbz_data->copy_values = FALSE;
+
+  if (strcmp (g_ascii_strdown (element_name, -1), "color") == 0)
+    {
+      sbz_data->in_color_tag = TRUE;
+    }
+  else if (strcmp (g_ascii_strdown (element_name, -1), "dc:identifier") == 0)
+    {
+      if (sbz_data->in_color_tag)
+        sbz_data->copy_name = TRUE;
+    }
+  else if (strcmp (g_ascii_strdown (element_name, -1), "values") == 0)
+    {
+      while (*attribute_names)
+        {
+          if (strcmp (g_ascii_strdown (*attribute_names, -1), "model") == 0)
+            {
+              sbz_data->color_model =
+                g_strdup (g_ascii_strdown (*attribute_values, -1));
+              break;
+            }
+
+          attribute_names++;
+          attribute_values++;
+        }
+
+      sbz_data->copy_values = TRUE;
+    }
+}
+
+static void
+swatchbooker_load_end_element (GMarkupParseContext *context,
+                               const gchar         *element_name,
+                               gpointer             user_data,
+                               GError             **error)
+{
+  SwatchBookerData *sbz_data = user_data;
+
+  if (strcmp (g_ascii_strdown (element_name, -1), "color") == 0)
+    sbz_data->in_color_tag = FALSE;
+}
+
+static void
+swatchbooker_load_text (GMarkupParseContext *context,
+                        const gchar         *text,
+                        gsize                text_len,
+                        gpointer             user_data,
+                        GError             **error)
+{
+  SwatchBookerData  *sbz_data = user_data;
+  gchar            **values;
+  gint               i;
+  gint               total = 0;
+
+  if (sbz_data->copy_name)
+    {
+      if (! sbz_data->palette_name)
+        sbz_data->palette_name = g_strdup (g_ascii_strdown (text, -1));
+
+      sbz_data->copy_name = FALSE;
+    }
+
+  if (sbz_data->copy_values)
+    {
+      values = g_strsplit (text, " ", 0);
+
+      for (i = 0; values[i]; i++)
+        total++;
+
+      if (total > 0)
+        {
+          gfloat      true_values[total];
+          GimpRGB     color;
+          const Babl *src_format = NULL;
+          const Babl *dst_format = babl_format ("R'G'B' float");
+          gboolean    load_pal   = FALSE;
+
+          for (i = 0; values[i]; i++)
+            true_values[i] = atof (values[i]);
+
+          /* No need for babl conversion for RGB colors */
+          if (! strcmp (sbz_data->color_model, "rgb")  ||
+              ! strcmp (sbz_data->color_model, "srgb"))
+          {
+            gimp_rgb_set (&color, true_values[0], true_values[1],
+                          true_values[2]);
+            load_pal = TRUE;
+          }
+
+          if (! strcmp (sbz_data->color_model, "gray"))
+            src_format = babl_format ("Y' float");
+          else if (! strcmp (sbz_data->color_model, "cmyk"))
+            src_format = babl_format ("CMYK float");
+          else if (! strcmp (sbz_data->color_model, "hsl"))
+            src_format = babl_format ("HSL float");
+          else if (! strcmp (sbz_data->color_model, "hsv"))
+            src_format = babl_format ("HSV float");
+          else if (! strcmp (sbz_data->color_model, "lab"))
+            src_format = babl_format ("CIE Lab float");
+          else if (! strcmp (sbz_data->color_model, "xyz"))
+            src_format = babl_format ("CIE XYZ float");
+
+          if (src_format != NULL)
+            {
+              gfloat rgb[3];
+
+              babl_process (babl_fish (src_format, dst_format),
+                            true_values, rgb, 1);
+              gimp_rgb_set (&color, rgb[0], rgb[1], rgb[2]);
+              load_pal = TRUE;
+            }
+
+          if (load_pal)
+            {
+              gimp_palette_add_entry (sbz_data->palette, sbz_data->position,
+                                      NULL, &color);
+              if (sbz_data->palette_name)
+                gimp_palette_set_entry_name (sbz_data->palette,
+                                             sbz_data->position,
+                                             sbz_data->palette_name);
+              sbz_data->position++;
+            }
+        }
+
+      sbz_data->palette_name = NULL;
+      sbz_data->copy_values  = FALSE;
+    }
+}
+
 GimpPaletteFileFormat
 gimp_palette_load_detect_format (GFile        *file,
                                  GInputStream *input)
@@ -672,6 +929,10 @@ gimp_palette_load_detect_format (GFile        *file,
       else if (g_str_has_suffix (lower, ".css"))
         {
           format = GIMP_PALETTE_FILE_FORMAT_CSS;
+        }
+      else if (g_str_has_suffix (lower, ".sbz"))
+        {
+          format = GIMP_PALETTE_FILE_FORMAT_SBZ;
         }
 
       g_free (lower);
