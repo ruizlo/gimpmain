@@ -1,0 +1,213 @@
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+
+struct node 
+{
+   char data;
+   struct node *next;
+};
+struct node *head = NULL;
+struct node *current = NULL;
+
+// Prints the file list
+void printList()
+{
+   struct node *p = head;
+   printf("\n[");
+
+   //start from the beginning
+   while(p != NULL) {
+      printf(" %d ",p->data);
+      p = p->next;
+   }
+   printf("]");
+}
+
+//inserts file at the beginning (pin method)
+void insertatbegin(char data)
+{
+
+   //create a link
+   struct node *lk = (struct node*) malloc(sizeof(struct node));
+   lk->data = data;
+
+   // point it to old first node
+   lk->next = head;
+
+   //point first to new first node
+   head = lk;
+}
+
+//inserts file at the end (unpin method)
+void insertatend(char data)
+{
+
+   //create a link
+   struct node *lk = (struct node*) malloc(sizeof(struct node));
+   lk->data = data;
+   struct node *linkedlist = head;
+
+   // point it to old first node
+   while(linkedlist->next != NULL)
+      linkedlist = linkedlist->next;
+
+   //point first to new first node
+   linkedlist->next = lk;
+}
+
+void insertafternode(struct node *list, char data)
+{
+   struct node *lk = (struct node*) malloc(sizeof(struct node));
+   lk->data = data;
+   lk->next = list->next;
+   list->next = lk;
+}
+
+void deleteatbegin()
+{
+   head = head->next;
+}
+
+void deleteatend()
+{
+   struct node *linkedlist = head;
+   while (linkedlist->next->next != NULL)
+      linkedlist = linkedlist->next;
+   linkedlist->next = NULL;
+}
+
+void deletenode(int key)
+{
+   struct node *temp = head, *prev;
+   if (temp != NULL && temp->data == key) 
+   {
+      head = temp->next;
+      return;
+   }
+
+   // Find the key to be deleted
+   while (temp != NULL && temp->data != key) 
+   {
+      prev = temp;
+      temp = temp->next;
+   }
+
+   // If the key is not present
+   if (temp == NULL) return;
+
+   // Remove the node
+   prev->next = temp->next;
+}
+
+int searchlist(char key)
+{
+   struct node *temp = head;
+   while(temp != NULL) 
+   {
+      if (temp->data == key) 
+      {
+         return 1;
+      }
+      temp=temp->next;
+   }
+   return 0;
+}
+
+int main()
+{
+  int i;
+  
+  // 1) app File
+  char fileOne[3] = {'a', 'p', 'p'};
+    insertatbegin(fileOne[2]);
+  // 2) app-tools File
+  char fileTwo[9] = {'a', 'p', 'p', '-', 't', 'o', 'o', 'l', 's'};
+    insertatend(fileTwo[8]);
+  // 3) build/windows/installer/lang/setup.isl.in File
+  char fileThree[41] = {'b', 'u', 'i', 'l', 'd', '/', 'w', 'i', 'n', 'd', 'o', 'w', 's', '/', 'i', 'n', 's', 't', 'a', 'l', 'l', 'e', 'r', '/', 'l', 'a', 'n', 'g', '/', 's', 'e', 't', 'u', 'p', '.', 'i', 's', 'l', '.', 'i', 'n'};
+    insertatend(fileThree[40]);
+  // 4) data File
+    char fileFour[4] = {'d', 'a', 't', 'a'};
+    insertatend(fileFour[3]);
+  // 5) desktop File
+    char fileFive[7] = {'d', 'e', 's', 'k', 't', 'o', 'p'};
+    insertatend(fileFive[6]);
+  // 6) extensions File
+    char fileSix[10] = {'e', 'x', 't', 'e', 'n', 's', 'i', 'o', 'n', 's'};
+    insertatend(fileSix[9]);
+  // 7) libgimp File
+    char fileSeven[7] = {'l', 'i', 'b', 'g', 'i', 'm', 'p'};
+    insertatend(fileSeven[6]);
+  // 8) libgimpbase File
+    char fileEight[11] = {'l', 'i', 'b', 'g', 'i', 'm', 'p', 'b', 'a', 's', 'e'};
+    insertatend(fileEight[10]);
+  // 9) libgimpcolor File
+    char fileNine[12] = {'l', 'i', 'b', 'g', 'i', 'm', 'p', 'c', 'o', 'l', 'o', 'r'};
+    insertatend(fileNine[11]);
+  // 10) libgimpconfig File
+    char fileTen[13] = {'l', 'i', 'b', 'g', 'i', 'm', 'p', 'c', 'o', 'n', 'f', 'i', 'g'};
+    insertatend(fileTen[12]);
+  // 11) libgimpmath File
+    char fileEleven[11] = {'l', 'i', 'b', 'g', 'i', 'm', 'p', 'm', 'a', 't', 'h'};
+    insertatend(fileEleven[10]);
+  // 12) libgimpmodule File
+    char fileTwelve[13] = {'l', 'i', 'b', 'g', 'i', 'm', 'p', 'm', 'o', 'd', 'u', 'l', 'e'};
+    insertatend(fileTwelve[12]);
+  // 13) libgimpthumb File
+    char fileThirteen[12] = {'l', 'i', 'b', 'g', 'i', 'm', 'p', 't', 'h', 'u', 'm', 'b'};
+    insertatend(fileThirteen[11]);
+  // 14) libgimpwidgets  File
+    char fileFourteen[14] = {'l', 'i', 'b', 'g', 'i', 'm', 'p', 'w', 'i', 'd', 'g', 'e', 't', 's'};
+    insertatend(fileFourteen[13]);
+  // 15) menus File
+    char fileFifteen[5] = {'m', 'e', 'n', 'u', 's'};
+    insertatend(fileFifteen[4]);
+  // 16) modules File
+    char fileSixteen[7] = {'m', 'o', 'd', 'u', 'l', 'e', 's'};
+    insertatend(fileSixteen[6]);
+  // 17) plug-ins  File
+    char fileSeventeen[8] = {'p', 'l', 'u', 'g', '-', 'i', 'n', 's'};
+    insertatend(fileSeventeen[7]);
+  // 18) tools File
+    char fileEighteen[5] = {'t', 'o', 'o', 'l', 's'};
+    insertatend(fileEighteen[4]);
+  
+  printf("File List: ");
+
+   // calls printList method
+   printList();
+
+  printf("\n");
+
+    // Ask user to select file to pin/unpin
+  char fileInput[100];
+  printf("\nSelect file: ");
+  fgets(fileInput, sizeof(fileInput), stdin);
+
+    // Ask user to call pin/unpin
+  char commandInput[5];
+  printf("Pin or unpin: ");
+  fgets(commandInput, sizeof(commandInput), stdin);
+
+    // Checks condition of user input for pin/unpin
+  if((commandInput[5] == "pin") || (commandInput[5] == "Pin"))
+  {
+    insertatbegin(fileInput[100]);
+  }
+  else if((commandInput[5] == "unpin") || (commandInput[5] == "Unpin"))
+  {
+    insertatend(fileInput[100]);
+  }
+  
+    // Prints new file system with pinned/unpinned file
+  printf("\nUpdated File List: ");
+  printList();
+
+
+  printf("\n");
+   if (fileInput[100] == fileOne[3])
+      printf("\nFile was pinned");
+   else
+      printf("\nFile was unpinned");
+}
