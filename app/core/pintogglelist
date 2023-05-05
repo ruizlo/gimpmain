@@ -1,0 +1,63 @@
+#include "gimpdocumentlist.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <dirent.h>
+
+//creating char array to store file names:
+char name[];
+  
+ //getting the files
+int main(void) {
+   DIR *files;
+   struct dirent *dir;
+  int count = 0;
+  int index =0;
+   files = opendir("gimpdocumentlist.h"); //open directory
+   if (files) {
+      while ((dir = readdir(files)) != NULL) {
+         strcpy(name[count], dir->d_name); //getting all directory names into name[] array
+        count++;
+      }
+      closedir(files); //close  directory
+   }
+  while (count >0){
+    strcpy(name[index]);
+    index++;
+    count--;
+  }
+   return(0);
+}
+  
+
+//creating the linkedlist to search for files
+typedef struct node {
+    char name[];
+    struct node *next;
+    struct node *prev;
+}
+ 
+//creating the nodes
+struct node *first = NULL;
+struct node*last = NULL;
+struct node *current = NULL;
+
+//if there is no files
+bool noFiles{
+  return first == NULL;
+}
+
+//forward
+void forForward(){
+  struct node *ptr = first;
+  while (ptr != NULL){
+    ptr = name[]->next;
+  }
+}
+
+//backwards
+void forBackward(){
+  struct node *ptr = last;
+  while(ptr!= NULL){
+  ptr = name[] ->prev;
+  }
+}
